@@ -52,7 +52,9 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
             module_id INTEGER NOT NULL,
             week_number INTEGER NOT NULL,
             session_date DATE NOT NULL,
+            status TEXT DEFAULT 'active' CHECK (status IN ('active', 'ended')),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ended_at TIMESTAMP NULL,
             FOREIGN KEY (module_id) REFERENCES modules(module_id) ON DELETE CASCADE ON UPDATE CASCADE,
             UNIQUE (module_id, week_number, session_date)
         );

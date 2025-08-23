@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lecturer Dashboard - OQAS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .navbar-brand {
+            font-weight: bold;
+            color: #2c3e50 !important;
+        }
+
+        .card {
+            border: none;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            border-radius: 0.5rem;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 0.5rem 0.5rem 0 0 !important;
+            border: none;
+        }
+
+        .table th {
+            border-top: none;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            border: none;
+            color: white;
+        }
+
+        .btn-close {
+            background: linear-gradient(135deg, #dc3545, #fd7e14);
+            border: none;
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.15);
+        }
+
+        .module-code {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #495057;
+        }
+
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+        }
+
+        .welcome-section {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+    </style>
+</head>
+
+<body class="bg-light">
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-graduation-cap me-2"></i>
+                OQAS - Online Quiz & Attendance System
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">
+                    <i class="fas fa-user me-1"></i>
+                    Welcome, Alfred Braima
+                </span>
+                <a class="nav-link" href="{{ url_for('logout') }}">
+                    <i class="fas fa-sign-out-alt me-1"></i>
+                    Logout
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Welcome Section -->
+        <div class="welcome-section">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h2 class="mb-2">
+                        <i class="fas fa-chalkboard-teacher text-primary me-2"></i>
+                        Lecturer Dashboard
+                    </h2>
+                    <p class="mb-0 text-muted">
+                        Manage your modules and start/close attendance sessions
+                    </p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <div class="d-flex align-items-center justify-content-end">
+                        <div class="text-end">
+                            <div class="fw-bold">Alfred Braima</div>
+                            <small class="text-muted">{{ user.username }}</small>
+                        </div>
+                        <div class="ms-3">
+                            <i class="fas fa-user-circle fa-2x text-primary"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Flash Messages -->
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-info alert-dismissible fade show" role="alert">
+            <i class="fas fa-info-circle me-2"></i>
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <!-- Modules Card -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-book me-2"></i>
+                    My Modules
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if modules %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Module Code</th>
+                                <th>Module Name</th>
+                                <th>Planned Weeks</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for module in modules %}
+                            <tr>
+                                <td>
+                                    <span class="module-code">{{ module.module_code }}</span>
+                                </td>
+                                <td>
+                                    <strong>{{ module.module_name }}</strong>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ module.planned_weeks }} weeks</span>
+                                </td>
+                                <td>
+                                    {% if module.active_session %}
+                                    <span class="badge bg-success status-badge">
+                                        <i class="fas fa-play me-1"></i>
+                                        Session Active
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary status-badge">
+                                        <i class="fas fa-pause me-1"></i>
+                                        No Active Session
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if module.active_session %}
+                                    <form method="POST"
+                                        action="{{ url_for('close_session', module_id=module.module_id) }}"
+                                        class="d-inline">
+                                        <button type="submit" class="btn btn-close btn-sm"
+                                            onclick="return confirm('Are you sure you want to close this session?')"
+                                            title="Close the current session for this module">
+                                            <i class="fas fa-stop me-1"></i>
+                                            Close Session
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <form method="POST"
+                                        action="{{ url_for('start_session', module_id=module.module_id) }}"
+                                        class="d-inline">
+                                        <button type="submit" class="btn btn-start btn-sm"
+                                            title="Start a new attendance session for this module">
+                                            <i class="fas fa-play me-1"></i>
+                                            Start Session
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-book-open fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">No modules assigned</h5>
+                    <p class="text-muted">Contact your administrator to get modules assigned to your account.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="row mt-4">
+            <div class="col-md-4">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-book fa-2x text-primary mb-2"></i>
+                        <h4 class="card-title">{{ modules|length }}</h4>
+                        <p class="card-text text-muted">Total Modules</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-play fa-2x text-success mb-2"></i>
+                        <h4 class="card-title">{{ modules|selectattr('active_session')|list|length }}</h4>
+                        <p class="card-text text-muted">Active Sessions</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-calendar fa-2x text-info mb-2"></i>
+                        <h4 class="card-title">{{ modules|sum(attribute='planned_weeks') }}</h4>
+                        <p class="card-text text-muted">Total Weeks</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-light text-center py-3 mt-5">
+        <div class="container">
+            <small>&copy; 2024 OQAS - Online Quiz & Attendance System. All rights reserved.</small>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Auto-hide flash messages after 5 seconds
+        setTimeout(function () {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                const bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 5000);
+    </script>
+</body>
+
+</html>

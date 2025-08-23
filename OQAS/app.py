@@ -1,9 +1,34 @@
-from flask import Flask, render_template, request, redirect, session, url_for, flash
+from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify
 from services.auth_service import AuthService
+from services.module_service import ModuleService
 from config import SECRET_KEY
+from functools import wraps
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY   # Needed for session
+
+# Login required decorator
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            flash('Please log in to access this page.')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# Lecturer required decorator
+def lecturer_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            flash('Please log in to access this page.')
+            return redirect(url_for('login'))
+        if not AuthService.is_lecturer(session['user']):
+            flash('Access denied. Lecturer privileges required.')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 @app.route("/")
 def index():
@@ -33,14 +58,68 @@ def login():
         flash(str(e))
         return render_template("login.html", error="Invalid credentials")
 
+@app.route("/logout")
+def logout():
+    session.pop('user', None)
+    flash('You have been logged out.')
+    return redirect(url_for('login'))
 
 @app.route("/admin/dashboard")
+@login_required
 def admin_dashboard():
     return "<h1>Admin Dashboard</h1>"
 
 @app.route("/lecturer/dashboard")
+@lecturer_required
 def lecturer_dashboard():
-    return "<h1>Lecturer Dashboard</h1>"
+    """Lecturer dashboard showing their modules"""
+    user = session['user']
+    modules = ModuleService.get_modules_by_lecturer(user['user_id'])
+    
+    # Get active sessions for each module
+    for module in modules:
+        module['active_session'] = ModuleService.get_active_session(module['module_id'])
+    
+    return render_template("dashboard.html", user=user, modules=modules)
+
+@app.route("/session/start/<int:module_id>", methods=["POST"])
+@lecturer_required
+def start_session(module_id):
+    """Start a new session for a module"""
+    try:
+        # Get the next week number for this module
+        # For simplicity, we'll use the current week number
+        from datetime import datetime
+        week_number = datetime.now().isocalendar()[1]
+        
+        success = ModuleService.start_session(module_id, week_number)
+        
+        if success:
+            flash(f'Session started successfully for week {week_number}')
+        else:
+            flash('Session already exists for today or failed to start')
+            
+    except Exception as e:
+        flash(f'Error starting session: {str(e)}')
+    
+    return redirect(url_for('lecturer_dashboard'))
+
+@app.route("/session/close/<int:module_id>", methods=["POST"])
+@lecturer_required
+def close_session(module_id):
+    """Close the active session for a module"""
+    try:
+        success = ModuleService.close_session(module_id)
+        
+        if success:
+            flash('Session closed successfully')
+        else:
+            flash('No active session found to close')
+            
+    except Exception as e:
+        flash(f'Error closing session: {str(e)}')
+    
+    return redirect(url_for('lecturer_dashboard'))
 
 if __name__ == "__main__":
     app.run(port=8000, debug=True)

@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify
 from services.auth_service import AuthService
 from services.module_service import ModuleService
+from services.session_service import SessionController
 from config import SECRET_KEY
 from functools import wraps
 
@@ -120,6 +121,23 @@ def close_session(module_id):
         flash(f'Error closing session: {str(e)}')
     
     return redirect(url_for('lecturer_dashboard'))
+
+@app.route("/session/qr/start/<int:module_id>")
+def start_session_qr(module_id):
+    user = session.get("user")
+    if not user or user.get("role") != "lecturer":
+        return redirect(url_for("login"))
+
+    result, error = SessionController.start_session(module_id, user["user_id"])
+    if error:
+        return f"<h3>{error}</h3><a href='/dashboard'>Back</a>"
+
+    return render_template("session_qr.html", qr=result["qr"], module_id=module_id, session_id=result["session_id"])
+
+@app.route("/session/qr/close/<int:session_id>")
+def close_session_qr(session_id):
+    SessionController.close_session(session_id)
+    return redirect(url_for("lecturer_dashboard"))
 
 if __name__ == "__main__":
     app.run(port=8000, debug=True)

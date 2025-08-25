@@ -68,16 +68,7 @@ class ModuleService:
         cursor = conn.cursor()
         
         try:
-            # Check if there's already an active session for today
-            cursor.execute("""
-                SELECT COUNT(*) FROM sessions 
-                WHERE module_id = ? AND session_date = ? AND status = 'active'
-            """, (module_id, date.today().isoformat()))
-            
-            if cursor.fetchone()[0] > 0:
-                return False  # Session already exists for today
-            
-            # Insert new session
+            # Insert new session (allow multiple per day)
             cursor.execute("""
                 INSERT INTO sessions (module_id, week_number, session_date, status)
                 VALUES (?, ?, ?, 'active')

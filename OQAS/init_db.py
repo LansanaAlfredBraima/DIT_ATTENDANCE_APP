@@ -51,8 +51,7 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
             status TEXT DEFAULT 'active' CHECK (status IN ('active', 'ended')),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             ended_at TIMESTAMP NULL,
-            FOREIGN KEY (module_id) REFERENCES modules(module_id) ON DELETE CASCADE ON UPDATE CASCADE,
-            UNIQUE (module_id, week_number, session_date)
+            FOREIGN KEY (module_id) REFERENCES modules(module_id) ON DELETE CASCADE ON UPDATE CASCADE
         );
     """)
 
@@ -69,6 +68,45 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
             UNIQUE (session_id, student_id)
         );
     """)
+
+    # App runs table to store per-run session_seed
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS app_runs (
+            run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_seed TEXT NOT NULL,
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+    # Ensure sessions table has run_id column (backward-compatible migration)
+    cursor.execute("PRAGMA table_info(sessions);")
+    columns = [row[1] for row in cursor.fetchall()]
+    if 'run_id' not in columns:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN run_id INTEGER NULL;")
+
+    # If there is a UNIQUE index from an older schema, rebuild table without it
+    cursor.execute("PRAGMA index_list('sessions');")
+    unique_indexes = [row for row in cursor.fetchall() if row[2] == 1]
+    if unique_indexes:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sessions_new (
+                session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                module_id INTEGER NOT NULL,
+                week_number INTEGER NOT NULL,
+                session_date DATE NOT NULL,
+                status TEXT DEFAULT 'active' CHECK (status IN ('active', 'ended')),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                ended_at TIMESTAMP NULL,
+                run_id INTEGER NULL,
+                FOREIGN KEY (module_id) REFERENCES modules(module_id) ON DELETE CASCADE ON UPDATE CASCADE
+            );
+        """)
+        cursor.execute("""
+            INSERT INTO sessions_new(session_id, module_id, week_number, session_date, status, created_at, ended_at, run_id)
+            SELECT session_id, module_id, week_number, session_date, status, created_at, ended_at, run_id FROM sessions;
+        """)
+        cursor.execute("DROP TABLE sessions;")
+        cursor.execute("ALTER TABLE sessions_new RENAME TO sessions;")
 
 def init_db() -> None:
     conn = sqlite3.connect(DB_PATH)

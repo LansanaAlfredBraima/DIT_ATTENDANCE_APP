@@ -189,15 +189,12 @@
                                         </button>
                                     </form>
                                     {% else %}
-                                    <form method="POST"
-                                        action="{{ url_for('start_session', module_id=module.module_id) }}"
-                                        class="d-inline">
-                                        <button type="submit" class="btn btn-start btn-sm"
-                                            title="Start a new attendance session for this module">
-                                            <i class="fas fa-play me-1"></i>
-                                            Start Session
-                                        </button>
-                                    </form>
+                                    <button type="button" class="btn btn-start btn-sm"
+                                        title="Start a new attendance session and display QR"
+                                        onclick="openQrModal({{ module.module_id }})">
+                                        <i class="fas fa-qrcode me-1"></i>
+                                        Start Session
+                                    </button>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -215,32 +212,22 @@
             </div>
         </div>
 
-        <!-- Quick Stats -->
-        <div class="row mt-4">
-            <div class="col-md-4">
-                <div class="card text-center">
-                    <div class="card-body">
-                        <i class="fas fa-book fa-2x text-primary mb-2"></i>
-                        <h4 class="card-title">{{ modules|length }}</h4>
-                        <p class="card-text text-muted">Total Modules</p>
+        <!-- QR Modal -->
+        <div class="modal fade" id="qrModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="fas fa-qrcode me-2"></i>Session QR</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card text-center">
-                    <div class="card-body">
-                        <i class="fas fa-play fa-2x text-success mb-2"></i>
-                        <h4 class="card-title">{{ modules|selectattr('active_session')|list|length }}</h4>
-                        <p class="card-text text-muted">Active Sessions</p>
+                    <div class="modal-body text-center">
+                        <img id="qrImage" src="" alt="QR Code" class="img-fluid" />
                     </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card text-center">
-                    <div class="card-body">
-                        <i class="fas fa-calendar fa-2x text-info mb-2"></i>
-                        <h4 class="card-title">{{ modules|sum(attribute='planned_weeks') }}</h4>
-                        <p class="card-text text-muted">Total Weeks</p>
+                    <div class="modal-footer">
+                        <button id="closeSessionBtn" type="button" class="btn btn-close">
+                            <i class="fas fa-stop me-1"></i>Close Session
+                        </button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Done</button>
                     </div>
                 </div>
             </div>
@@ -264,6 +251,28 @@
                 bsAlert.close();
             });
         }, 5000);
+
+        let currentSessionId = null;
+        function openQrModal(moduleId) {
+            fetch(`/api/session/qr/start/${moduleId}`, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.ok) {
+                        alert(data.error || 'Failed to start session');
+                        return;
+                    }
+                    currentSessionId = data.session_id;
+                    document.getElementById('qrImage').src = `data:image/png;base64,${data.qr}`;
+                    const modal = new bootstrap.Modal(document.getElementById('qrModal'));
+                    modal.show();
+                })
+                .catch(() => alert('Failed to start session'));
+        }
+
+        document.getElementById('closeSessionBtn').addEventListener('click', function () {
+            if (!currentSessionId) return;
+            window.location.href = `/session/qr/close/${currentSessionId}`;
+        });
     </script>
 </body>
 

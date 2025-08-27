@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ module_info.module_code }} Weeks — OQAS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .tiny-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #6c757d; }
+    </style>
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('lecturer_dashboard') }}">
+                <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+            </a>
+            <span class="navbar-text">OQAS</span>
+        </div>
+    </nav>
+
+    <div class="container py-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">
+                        <i class="fas fa-calendar-week me-2"></i>
+                        {{ module_info.module_code }} — {{ module_info.module_name }} ({{ module_info.planned_weeks }} Weeks)
+                    </h5>
+                </div>
+                <a class="btn btn-sm btn-secondary" href="{{ url_for('lecturer_dashboard') }}">
+                    <i class="fas fa-home me-1"></i>Dashboard
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    {% for w in range(1, 15) %}
+                    <div class="col-12 col-md-6 col-lg-4">
+                        <div class="border rounded p-3 h-100">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <strong>Week {{ w }}</strong>
+                                {% if weeks[w] and weeks[w][-1].status == 'active' %}
+                                <span class="badge bg-success">Active</span>
+                                {% endif %}
+                            </div>
+                            {% if weeks[w] %}
+                                <div class="mb-2" role="list">{%- for s in weeks[w] -%}
+                                    <div class="mb-1" role="listitem">
+                                        <span class="tiny-dot me-1"></span>
+                                        {{ s.session_date }} — {{ s.status|capitalize }}
+                                        <a class="ms-2" href="{{ url_for('lecturer_view_attendance', session_id=s.session_id) }}">View attendance</a>
+                                    </div>
+                                {%- endfor -%}</div>
+                            {% else %}
+                                <div class="text-muted">No sessions</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+
+

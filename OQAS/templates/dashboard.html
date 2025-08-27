@@ -66,6 +66,23 @@
             padding: 1.5rem;
             margin-bottom: 2rem;
         }
+        /* Table column widths for live attendance */
+        .col-id { width: 30%; }
+        .col-name { width: 40%; }
+        .col-ts { width: 30%; }
+        /* Live indicator */
+        .live-chip { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: #eaf7ff; color: #0d6efd; }
+        .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #dc3545; box-shadow: 0 0 0 0 rgba(220,53,69, 0.7); animation: pulse 1.5s infinite; }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(220,53,69, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(220,53,69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(220,53,69, 0); }
+        }
+        /* Truncation helpers for small screens */
+        .truncate { max-width: 100%; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+        @media (max-width: 576px) {
+            .table td, .table th { font-size: 0.875rem; }
+        }
     </style>
 </head>
 
@@ -124,7 +141,7 @@
         <div class="alert alert-info alert-dismissible fade show" role="alert">
             <i class="fas fa-info-circle me-2"></i>
             {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
         {% endfor %}
         {% endif %}
@@ -189,12 +206,18 @@
                                         </button>
                                     </form>
                                     {% else %}
-                                    <button type="button" class="btn btn-start btn-sm"
+                                    <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-start btn-sm btn-start-session"
                                         title="Start a new attendance session and display QR"
-                                        onclick="openQrModal({{ module.module_id }})">
+                                        data-module-id="{{ module.module_id }}">
                                         <i class="fas fa-qrcode me-1"></i>
                                         Start Session
                                     </button>
+                                    <a class="btn btn-outline-primary btn-sm" href="{{ url_for('lecturer_module_weeks', module_id=module.module_id) }}" title="View weeks 1–14 and sessions">
+                                        <i class="fas fa-calendar-week me-1"></i>
+                                        View Weeks
+                                    </a>
+                                    </div>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -217,11 +240,40 @@
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title"><i class="fas fa-qrcode me-2"></i>Session QR</h5>
+                        <h5 class="modal-title d-flex align-items-center gap-2"><i class="fas fa-qrcode me-2"></i>Session QR <span id="liveChip" class="live-chip d-none"><span class="live-dot"></span>Live</span></h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body text-center">
                         <img id="qrImage" src="" alt="QR Code" class="img-fluid" />
+                        <hr class="my-3" />
+                        <div class="text-start">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <h6 class="mb-0"><i class="fas fa-users me-2"></i>Live Attendance</h6>
+                                <small class="text-muted" id="lastUpdated">Last updated: --</small>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th class="col-id">Student ID</th>
+                                            <th class="col-name">Name</th>
+                                            <th class="col-ts">Timestamp</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="attendanceTableBody">
+                                        <tr>
+                                            <td colspan="3" class="text-center text-muted">
+                                                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                                Loading attendance...
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <div class="text-end">
+                                    <a id="viewAttendanceBtn" class="btn btn-link btn-sm" href="#" target="_blank">View full attendance</a>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button id="closeSessionBtn" type="button" class="btn btn-close">
@@ -253,6 +305,50 @@
         }, 5000);
 
         let currentSessionId = null;
+        let attendancePollHandle = null;
+
+        function renderAttendanceRows(records) {
+            const tbody = document.getElementById('attendanceTableBody');
+            if (!Array.isArray(records) || records.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" class="text-muted">No check-ins yet.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = records.map(r => {
+                const ts = (r.timestamp || '').replace('T', ' ').slice(0, 19);
+                const nameCell = r.student_name ? `<span class="truncate" title="${r.student_name}">${r.student_name}</span>` : '';
+                return `<tr><td>${r.student_id}</td><td>${nameCell}</td><td>${ts}</td></tr>`;
+            }).join('');
+        }
+
+        function startAttendancePolling() {
+            if (!currentSessionId) return;
+            // fetch immediately, then every 3s
+            fetch(`/api/attendance/session/${currentSessionId}`).then(r => r.json()).then(data => {
+                if (data && data.ok) {
+                    renderAttendanceRows(data.records);
+                    const liveChip = document.getElementById('liveChip');
+                    if (liveChip) liveChip.classList.remove('d-none');
+                    const ts = new Date();
+                    document.getElementById('lastUpdated').textContent = `Last updated: ${ts.toLocaleTimeString()}`;
+                }
+            }).catch(() => {});
+            attendancePollHandle = setInterval(() => {
+                fetch(`/api/attendance/session/${currentSessionId}`).then(r => r.json()).then(data => {
+                    if (data && data.ok) {
+                        renderAttendanceRows(data.records);
+                        const ts = new Date();
+                        document.getElementById('lastUpdated').textContent = `Last updated: ${ts.toLocaleTimeString()}`;
+                    }
+                }).catch(() => {});
+            }, 3000);
+        }
+
+        function stopAttendancePolling() {
+            if (attendancePollHandle) {
+                clearInterval(attendancePollHandle);
+                attendancePollHandle = null;
+            }
+        }
         function openQrModal(moduleId) {
             fetch(`/api/session/qr/start/${moduleId}`, { method: 'POST' })
                 .then(r => r.json())
@@ -263,11 +359,33 @@
                     }
                     currentSessionId = data.session_id;
                     document.getElementById('qrImage').src = `data:image/png;base64,${data.qr}`;
-                    const modal = new bootstrap.Modal(document.getElementById('qrModal'));
+                    const modalEl = document.getElementById('qrModal');
+                    const modal = new bootstrap.Modal(modalEl);
                     modal.show();
+                    const viewBtn = document.getElementById('viewAttendanceBtn');
+                    if (viewBtn) viewBtn.href = `/lecturer/sessions/${currentSessionId}/attendance`;
+                    // start polling when modal is shown
+                    startAttendancePolling();
+                    // ensure we stop polling when modal hides
+                    modalEl.addEventListener('hidden.bs.modal', () => {
+                        stopAttendancePolling();
+                        currentSessionId = null;
+                        document.getElementById('attendanceTableBody').innerHTML = '<tr><td colspan="3" class="text-muted">Waiting for check-ins...</td></tr>';
+                        const liveChip = document.getElementById('liveChip');
+                        if (liveChip) liveChip.classList.add('d-none');
+                        document.getElementById('lastUpdated').textContent = 'Last updated: --';
+                    }, { once: true });
                 })
                 .catch(() => alert('Failed to start session'));
         }
+
+        // Delegate click for start session buttons
+        document.addEventListener('click', function(e) {
+            const btn = e.target.closest('.btn-start-session');
+            if (!btn) return;
+            const moduleId = btn.getAttribute('data-module-id');
+            if (moduleId) openQrModal(moduleId);
+        });
 
         document.getElementById('closeSessionBtn').addEventListener('click', function () {
             if (!currentSessionId) return;

@@ -5,6 +5,7 @@ from services.session_service import SessionController
 from services.qr_services import QRService
 from services.attendance_service import AttendanceService
 import sqlite3
+from datetime import datetime
 from config import DB_PATH
 from config import SECRET_KEY, PORT
 from functools import wraps
@@ -157,6 +158,152 @@ def close_session_qr(session_id):
     SessionController.close_session(session_id)
     return redirect(url_for("lecturer_dashboard"))
 
+@app.route("/lecturer/sessions/<int:session_id>/attendance", methods=["GET"])
+@lecturer_required
+def lecturer_view_attendance(session_id: int):
+    """Render attendance list for a given session (open or closed)."""
+    try:
+        # Fetch basic session + module info
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT s.session_id, s.session_date, s.status, m.module_code, m.module_name
+            FROM sessions s
+            JOIN modules m ON s.module_id = m.module_id
+            WHERE s.session_id = ?
+            """,
+            (session_id,),
+        )
+        row = cursor.fetchone()
+    finally:
+        try:
+            conn.close()  # type: ignore[name-defined]
+        except Exception:
+            pass
+
+    if not row:
+        flash("Session not found")
+        return redirect(url_for("lecturer_dashboard"))
+
+    session_info = {
+        "session_id": row[0],
+        "session_date": row[1],
+        "status": row[2],
+        "module_code": row[3],
+        "module_name": row[4],
+    }
+
+    records = AttendanceService.list_attendance_for_session(session_id)
+    return render_template("attendance_session.html", session_info=session_info, records=records)
+
+@app.route("/lecturer/modules/<int:module_id>/weeks", methods=["GET"])
+@lecturer_required
+def lecturer_module_weeks(module_id: int):
+    """Show Weeks 1–14 for a module with any sessions per week and links to attendance."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT module_code, module_name, planned_weeks FROM modules WHERE module_id = ?", (module_id,))
+        mod = cursor.fetchone()
+        if not mod:
+            flash("Module not found")
+            return redirect(url_for("lecturer_dashboard"))
+
+        module_info = {
+            "module_id": module_id,
+            "module_code": mod[0],
+            "module_name": mod[1],
+            "planned_weeks": mod[2] or 14,
+        }
+
+        cursor.execute(
+            """
+            SELECT session_id, week_number, session_date, status
+            FROM sessions
+            WHERE module_id = ?
+            ORDER BY week_number ASC, session_date ASC
+            """,
+            (module_id,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        try:
+            conn.close()  # type: ignore[name-defined]
+        except Exception:
+            pass
+
+    weeks = {w: [] for w in range(1, 15)}
+    for r in rows:
+        weeks.setdefault(r[1], []).append({
+            "session_id": r[0],
+            "session_date": r[2],
+            "status": r[3],
+        })
+
+    return render_template("module_weeks.html", module_info=module_info, weeks=weeks)
+
+@app.route("/api/attendance/session/<int:session_id>", methods=["GET"])
+@lecturer_required
+def api_list_attendance_for_session(session_id: int):
+    try:
+        records = AttendanceService.list_attendance_for_session(session_id)
+        return jsonify({"ok": True, "records": records})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/attendance/submit", methods=["POST"])
+def api_submit_attendance():
+    """API endpoint for submitting attendance records"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "error": "No data provided"}), 400
+        
+        session_id = data.get("session_id")
+        student_id = data.get("student_id")
+        student_name = data.get("student_name")
+        
+        if not all([session_id, student_id, student_name]):
+            return jsonify({"success": False, "error": "Missing required fields: session_id, student_id, student_name"}), 400
+        
+        # Validate session_id is integer
+        try:
+            session_id = int(session_id)
+        except ValueError:
+            return jsonify({"success": False, "error": "session_id must be an integer"}), 400
+        
+        # Validate student_id is integer
+        try:
+            student_id = int(student_id)
+        except ValueError:
+            return jsonify({"success": False, "error": "student_id must be an integer"}), 400
+        
+        # Submit attendance
+        success, error_message = AttendanceService.submit_attendance(
+            session_id=session_id,
+            student_id=student_id,
+            student_name=student_name
+        )
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": "Attendance recorded successfully",
+                "timestamp": datetime.now().isoformat()
+            }), 200
+        else:
+            return jsonify({
+                "success": False,
+                "error": error_message
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": f"Internal server error: {str(e)}"
+        }), 500
+
 @app.route("/checkin", methods=["GET", "POST"])
 def checkin():
     token = request.args.get("tk")
@@ -210,7 +357,7 @@ def checkin():
         if len(student_name) < 2:
             return render_template("checkin.html", data=data, form_error="Name is too short.", form_values={"student_id": full_student_id, "student_name": student_name}), 400
 
-        ok, err = AttendanceService.record_attendance(session_id=int(data["session_id"]), student_id=student_id, student_name=student_name)
+        ok, err = AttendanceService.submit_attendance(session_id=int(data["session_id"]), student_id=student_id, student_name=student_name)
         if not ok:
             return render_template("checkin.html", data=data, form_error=err, form_values={"student_id": full_student_id, "student_name": student_name}), 400
 

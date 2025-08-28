@@ -1,9 +1,11 @@
 from flask import Flask, render_template, request, redirect, session, url_for, flash, jsonify
+from flask import Response
 from services.auth_service import AuthService
 from services.module_service import ModuleService
 from services.session_service import SessionController
 from services.qr_services import QRService
 from services.attendance_service import AttendanceService
+from services.report_service import ReportService
 import sqlite3
 from datetime import datetime
 from config import DB_PATH
@@ -243,6 +245,102 @@ def lecturer_module_weeks(module_id: int):
 
     return render_template("module_weeks.html", module_info=module_info, weeks=weeks)
 
+@app.route("/module/summary", methods=["GET"])
+@lecturer_required
+def module_summary():
+    """Render per-student totals for a module with optional filters.
+
+    Query params:
+      - module_id (required)
+      - start_date (YYYY-MM-DD)
+      - end_date (YYYY-MM-DD)
+      - student_id (optional)
+    """
+    try:
+        module_id = request.args.get("module_id", type=int)
+        if not module_id:
+            flash("module_id is required")
+            return redirect(url_for("lecturer_dashboard"))
+
+        start_date = request.args.get("start_date") or None
+        end_date = request.args.get("end_date") or None
+        student_id = request.args.get("student_id", type=int) or None
+
+        report = ReportService.get_module_summary(
+            module_id=module_id,
+            start_date=start_date,
+            end_date=end_date,
+            student_id=student_id,
+        )
+
+        if report.get("error"):
+            flash(report.get("error"))
+            return redirect(url_for("lecturer_dashboard"))
+
+        return render_template("summary.html", report=report)
+    except Exception as e:
+        flash(f"Error generating summary: {str(e)}")
+        return redirect(url_for("lecturer_dashboard"))
+
+@app.route("/module/summary/export/csv", methods=["GET"])
+@lecturer_required
+def module_summary_export_csv():
+    try:
+        module_id = request.args.get("module_id", type=int)
+        if not module_id:
+            flash("module_id is required")
+            return redirect(url_for("lecturer_dashboard"))
+
+        start_date = request.args.get("start_date") or None
+        end_date = request.args.get("end_date") or None
+        student_id = request.args.get("student_id", type=int) or None
+
+        filename, data = ReportService.export_csv(
+            module_id=module_id,
+            start_date=start_date,
+            end_date=end_date,
+            student_id=student_id,
+        )
+        resp = Response(data, mimetype="text/csv; charset=utf-8")
+        resp.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        return resp
+    except Exception as e:
+        flash(f"CSV export failed: {str(e)}")
+        if request.args.get("module_id"):
+            return redirect(url_for("module_summary", **request.args))
+        return redirect(url_for("lecturer_dashboard"))
+
+@app.route("/module/summary/export/pdf", methods=["GET"])
+@lecturer_required
+def module_summary_export_pdf():
+    try:
+        module_id = request.args.get("module_id", type=int)
+        if not module_id:
+            flash("module_id is required")
+            return redirect(url_for("lecturer_dashboard"))
+
+        start_date = request.args.get("start_date") or None
+        end_date = request.args.get("end_date") or None
+        student_id = request.args.get("student_id", type=int) or None
+
+        filename, data = ReportService.export_pdf(
+            module_id=module_id,
+            start_date=start_date,
+            end_date=end_date,
+            student_id=student_id,
+        )
+        resp = Response(data, mimetype="application/pdf")
+        resp.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        return resp
+    except ImportError as e:
+        flash(str(e))
+        return redirect(url_for("module_summary", **request.args))
+    except Exception as e:
+        flash(f"PDF export failed: {str(e)}")
+        if request.args.get("module_id"):
+            return redirect(url_for("module_summary", **request.args))
+        return redirect(url_for("lecturer_dashboard"))
+
 @app.route("/api/attendance/session/<int:session_id>", methods=["GET"])
 @lecturer_required
 def api_list_attendance_for_session(session_id: int):
@@ -303,6 +401,31 @@ def api_submit_attendance():
             "success": False,
             "error": f"Internal server error: {str(e)}"
         }), 500
+
+
+# Day 11: Attendance calculation APIs
+@app.route("/api/attendance/student/<int:student_id>/module/<int:module_id>", methods=["GET"])
+@lecturer_required
+def api_student_attendance_percentage(student_id: int, module_id: int):
+    try:
+        result = AttendanceService.calculate_student_attendance_percentage(student_id, module_id)
+        if result.get("error"):
+            return jsonify({"ok": False, "error": result["error"]}), 404
+        return jsonify({"ok": True, "data": result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/attendance/module/<int:module_id>/summary", methods=["GET"])
+@lecturer_required
+def api_module_attendance_summary(module_id: int):
+    try:
+        summary = AttendanceService.calculate_module_attendance_summary(module_id)
+        if summary.get("error"):
+            return jsonify({"ok": False, "error": summary["error"]}), 404
+        return jsonify({"ok": True, "data": summary})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/checkin", methods=["GET", "POST"])
 def checkin():

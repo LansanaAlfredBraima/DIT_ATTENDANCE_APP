@@ -217,6 +217,10 @@
                                         <i class="fas fa-calendar-week me-1"></i>
                                         View Weeks
                                     </a>
+                                    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('module_summary') }}?module_id={{ module.module_id }}" title="View per-student summary with filters">
+                                        <i class="fas fa-chart-pie me-1"></i>
+                                        Summary
+                                    </a>
                                     </div>
                                     {% endif %}
                                 </td>

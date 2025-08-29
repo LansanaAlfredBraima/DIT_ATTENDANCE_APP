@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, session, url_for, f
 from flask import Response
 from services.auth_service import AuthService
 from services.module_service import ModuleService
+from services.admin_service import AdminService
 from services.session_service import SessionController
 from services.qr_services import QRService
 from services.attendance_service import AttendanceService
@@ -11,6 +12,7 @@ from datetime import datetime
 from config import DB_PATH
 from config import SECRET_KEY, PORT
 from functools import wraps
+import os
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY   # Needed for session
@@ -34,6 +36,18 @@ def lecturer_required(f):
             return redirect(url_for('login'))
         if not AuthService.is_lecturer(session['user']):
             flash('Access denied. Lecturer privileges required.')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user' not in session:
+            flash('Please log in to access this page.')
+            return redirect(url_for('login'))
+        if not AuthService.is_admin(session['user']):
+            flash('Access denied. Admin privileges required.')
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -73,9 +87,88 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route("/admin/dashboard")
-@login_required
+@admin_required
 def admin_dashboard():
-    return "<h1>Admin Dashboard</h1>"
+    lecturers = AdminService.list_lecturers()
+    modules = AdminService.list_modules()
+    last_backup = None
+    return render_template("admin_dashboard.html", lecturers=lecturers, modules=modules, last_backup=last_backup)
+
+@app.route("/admin/lecturers", methods=["POST"])
+@admin_required
+def admin_create_lecturer():
+    username = request.form.get("username", "").strip()
+    full_name = request.form.get("full_name", "").strip()
+    password = request.form.get("password", "").strip()
+    ok, err = AdminService.create_lecturer(username, full_name, password)
+    flash("Lecturer created" if ok else err)
+    return redirect(url_for('admin_dashboard'))
+
+@app.route("/admin/lecturers/<int:user_id>/reset", methods=["POST"])
+@admin_required
+def admin_reset_lecturer_password(user_id: int):
+    new_password = request.form.get("new_password", "").strip()
+    ok, err = AdminService.reset_lecturer_password(user_id, new_password)
+    flash("Password reset" if ok else err)
+    return redirect(url_for('admin_dashboard'))
+
+@app.route("/admin/lecturers/<int:user_id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_lecturer(user_id: int):
+    ok, err = AdminService.delete_lecturer(user_id)
+    flash("Lecturer deleted" if ok else err)
+    return redirect(url_for('admin_dashboard'))
+
+@app.route("/admin/modules", methods=["POST"])
+@admin_required
+def admin_create_module():
+    module_code = request.form.get("module_code", "").strip()
+    module_name = request.form.get("module_name", "").strip()
+    lecturer_id = request.form.get("lecturer_id", type=int)
+    planned_weeks = request.form.get("planned_weeks", default=14, type=int)
+    ok, err = AdminService.create_module(module_code, module_name, lecturer_id, planned_weeks)
+    flash("Module created" if ok else err)
+    return redirect(url_for('admin_dashboard'))
+
+@app.route("/admin/modules/<int:module_id>", methods=["POST"])
+@admin_required
+def admin_update_module(module_id: int):
+    module_code = request.form.get("module_code", "").strip()
+    module_name = request.form.get("module_name", "").strip()
+    lecturer_id = request.form.get("lecturer_id", type=int)
+    planned_weeks = request.form.get("planned_weeks", default=14, type=int)
+    ok, err = AdminService.update_module(module_id, module_code, module_name, lecturer_id, planned_weeks)
+    flash("Module updated" if ok else err)
+    return redirect(url_for('admin_dashboard'))
+
+@app.route("/admin/modules/<int:module_id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_module(module_id: int):
+    ok, err = AdminService.delete_module(module_id)
+    flash("Module deleted" if ok else err)
+    return redirect(url_for('admin_dashboard'))
+
+@app.route("/admin/backup", methods=["POST"])
+@admin_required
+def admin_backup_db():
+    ok, err, path = AdminService.backup_database(target_dir="db/backups")
+    flash(f"Backup created: {path}" if ok else f"Backup failed: {err}")
+    return redirect(url_for('admin_dashboard'))
+
+@app.route("/admin/restore", methods=["POST"])
+@admin_required
+def admin_restore_db():
+    file = request.files.get("dbfile")
+    if not file:
+        flash("No file uploaded")
+        return redirect(url_for('admin_dashboard'))
+    # Save uploaded file to a temp path
+    temp_path = os.path.join("db", "uploads", file.filename)
+    os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+    file.save(temp_path)
+    ok, err = AdminService.restore_database(temp_path)
+    flash("Database restored" if ok else f"Restore failed: {err}")
+    return redirect(url_for('admin_dashboard'))
 
 @app.route("/lecturer/dashboard")
 @lecturer_required

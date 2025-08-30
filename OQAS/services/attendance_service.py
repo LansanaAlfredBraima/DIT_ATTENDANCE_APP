@@ -38,7 +38,7 @@ class AttendanceService:
             try:
                 # Ensure session exists and is active
                 cursor.execute(
-                    "SELECT status, module_id FROM sessions WHERE session_id = ?",
+                    "SELECT status, module_id, week_number FROM sessions WHERE session_id = ?",
                     (session_id,),
                 )
                 row = cursor.fetchone()
@@ -48,6 +48,21 @@ class AttendanceService:
                     return False, "Session is not active."
                 
                 module_id = row[1]
+                week_number = row[2]
+
+                # Prevent duplicate check-in for the same module and week
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM attendance a
+                    JOIN sessions s ON a.session_id = s.session_id
+                    WHERE a.student_id = ? AND s.module_id = ? AND s.week_number = ?
+                    LIMIT 1
+                    """,
+                    (student_id, module_id, week_number),
+                )
+                if cursor.fetchone():
+                    return False, "Student has already checked in for this module in the selected week."
                 
                 # Check if attendance already exists (duplicate prevention)
                 cursor.execute(
@@ -422,7 +437,7 @@ class AttendanceService:
                 pass
 
     @staticmethod
-    def get_student_attendance_history(student_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_student_attendance_history(student_id: int, limit: int = 50, session_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Get detailed attendance history for a specific student.
         
@@ -437,26 +452,48 @@ class AttendanceService:
             conn = sqlite3.connect(DB_PATH)
             cursor = conn.cursor()
             
-            cursor.execute(
-                """
-                SELECT 
-                    a.session_id,
-                    s.module_id,
-                    m.module_code,
-                    m.module_name,
-                    s.week_number,
-                    s.session_date,
-                    a.checkin_time,
-                    a.status
-                FROM attendance a
-                JOIN sessions s ON a.session_id = s.session_id
-                JOIN modules m ON s.module_id = m.module_id
-                WHERE a.student_id = ?
-                ORDER BY s.session_date DESC, s.week_number DESC
-                LIMIT ?
-                """,
-                (student_id, limit)
-            )
+            if session_id is not None:
+                cursor.execute(
+                    """
+                    SELECT 
+                        a.session_id,
+                        s.module_id,
+                        m.module_code,
+                        m.module_name,
+                        s.week_number,
+                        s.session_date,
+                        a.checkin_time,
+                        a.status
+                    FROM attendance a
+                    JOIN sessions s ON a.session_id = s.session_id
+                    JOIN modules m ON s.module_id = m.module_id
+                    WHERE a.student_id = ? AND a.session_id = ?
+                    ORDER BY a.checkin_time ASC
+                    LIMIT ?
+                    """,
+                    (student_id, session_id, limit)
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT 
+                        a.session_id,
+                        s.module_id,
+                        m.module_code,
+                        m.module_name,
+                        s.week_number,
+                        s.session_date,
+                        a.checkin_time,
+                        a.status
+                    FROM attendance a
+                    JOIN sessions s ON a.session_id = s.session_id
+                    JOIN modules m ON s.module_id = m.module_id
+                    WHERE a.student_id = ?
+                    ORDER BY s.session_date DESC, s.week_number DESC
+                    LIMIT ?
+                    """,
+                    (student_id, limit)
+                )
             
             rows = cursor.fetchall()
             history = []

@@ -1,5 +1,4 @@
 import os
-import secrets
 import socket
 
 # Base project directory
@@ -8,8 +7,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Database path
 DB_PATH = os.path.join(BASE_DIR, "db", "oqas.db")
 
-# Secret key for Flask (used later for sessions/JWT)
-SECRET_KEY = secrets.token_hex(32)
+# Secret key for Flask (sessions/CSRF). In production, set SECRET_KEY env var.
+# Falling back to a fixed dev key avoids logging out all users on every restart.
+SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
 # Default app port
 PORT = 8000

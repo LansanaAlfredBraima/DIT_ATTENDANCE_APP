@@ -1,0 +1,43 @@
+:root {
+	--lkc-black: #000000;
+	--lkc-gold: #D4AF37;
+	--lkc-gold-dark: #b8922f;
+	--lkc-white: #ffffff;
+}
+
+/* Navbar */
+.navbar-dark.bg-black { background-color: var(--lkc-black) !important; }
+.navbar .navbar-brand, .navbar .nav-link, .navbar .navbar-text { color: var(--lkc-white) !important; }
+.navbar .navbar-brand .accent, .text-gold { color: var(--lkc-gold) !important; }
+.brand-logo { height: 40px; width: auto; margin-right: 8px; border-radius: 2px; }
+.brand-logo-lg { height: 64px; width: auto; margin-right: 10px; border-radius: 4px; }
+.brand-logo-xl { height: 120px; width: auto; margin-right: 10px; border-radius: 4px; }
+
+/* Buttons */
+.btn-primary {
+	background-color: var(--lkc-gold) !important;
+	border-color: var(--lkc-gold) !important;
+	color: var(--lkc-black) !important;
+}
+.btn-primary:hover { background-color: var(--lkc-gold-dark) !important; border-color: var(--lkc-gold-dark) !important; }
+.btn-outline-primary { color: var(--lkc-gold) !important; border-color: var(--lkc-gold) !important; }
+.btn-outline-primary:hover { background-color: var(--lkc-gold) !important; color: var(--lkc-black) !important; }
+
+/* Badges */
+.badge.bg-secondary { background-color: #333333 !important; }
+.badge.bg-success { background-color: #198754 !important; }
+
+/* Cards and headers */
+.card-header.theme {
+	background: linear-gradient(135deg, var(--lkc-black) 0%, #1a1a1a 60%, var(--lkc-gold) 100%);
+	color: var(--lkc-white);
+}
+
+/* Footer */
+footer.bg-black { background-color: var(--lkc-black) !important; color: var(--lkc-white); }
+
+/* Links */
+a { color: #0d6efd; }
+a:hover { color: #0a58ca; }
+
+

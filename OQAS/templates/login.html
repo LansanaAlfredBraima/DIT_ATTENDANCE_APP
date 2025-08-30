@@ -1,21 +1,57 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>OQAS Login</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Limkokwing University of Creative Technology Students Attendance App - Login</title>
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+	<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+	<link href="/static/css/theme.css" rel="stylesheet">
+	<style>
+		body { background: linear-gradient(135deg, #111111 0%, #1a1a1a 60%, #222222 100%); }
+		.card { border: none; box-shadow: 0 0.5rem 1rem rgba(0,0,0,.08); border-radius: 0.75rem; }
+		.brand-title { font-weight: 700; color: var(--lkc-white); }
+	</style>
 </head>
-<body>
-    <h2>Login</h2>
-    {% if error %}
-        <p style="color:red;">{{ error }}</p>
-    {% endif %}
-    <form method="POST">
-        <label>Username:</label><br>
-        <input type="text" name="username" required><br><br>
-
-        <label>Password:</label><br>
-        <input type="password" name="password" required><br><br>
-
-        <button type="submit">Login</button>
-    </form>
+<body class="min-vh-100 d-flex align-items-center justify-content-center">
+	<div class="container py-5">
+		<div class="row justify-content-center">
+			<div class="col-12 col-sm-10 col-md-8 col-lg-5">
+				<div class="text-center mb-4">
+					<img src="{{ url_for('static', filename='img/luct.jpg') }}" alt="LUCT" class="brand-logo-lg mb-2"/>
+					<h1 class="brand-title h5 mb-1">Limkokwing University of Creative Technology</h1>
+					<small class="text-gold">Students Attendance App</small>
+				</div>
+				<div class="card p-4 p-md-5">
+					<h2 class="h4 mb-3 text-center">Sign in</h2>
+					{% with messages = get_flashed_messages() %}
+					{% if messages %}
+						<div class="alert alert-info py-2">{{ messages[0] }}</div>
+					{% endif %}
+					{% endwith %}
+					{% if error %}
+						<div class="alert alert-danger py-2">{{ error }}</div>
+					{% endif %}
+					<form method="POST" class="mt-2">
+						<input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+						<div class="mb-3">
+							<label for="username" class="form-label">Username</label>
+							<input type="text" id="username" name="username" class="form-control" placeholder="Enter your username" required autofocus>
+						</div>
+						<div class="mb-2">
+							<label for="password" class="form-label">Password</label>
+							<input type="password" id="password" name="password" class="form-control" placeholder="Enter your password" required>
+						</div>
+						<div class="d-grid mt-3">
+							<button type="submit" class="btn btn-primary">
+								<i class="fas fa-sign-in-alt me-1"></i>Login
+							</button>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

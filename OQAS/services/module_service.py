@@ -63,11 +63,47 @@ class ModuleService:
     
     @staticmethod
     def start_session(module_id: int, week_number: int) -> bool:
-        """Start a new session for a module"""
+        """Start a new session for a module.
+
+        Enforces: at most one session per module per ISO week. Also expires any
+        lingering active session older than 3 hours before attempting to start.
+        """
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
         try:
+            # Expire any active session older than 3 hours
+            cursor.execute(
+                """
+                UPDATE sessions
+                SET status = 'ended', ended_at = CURRENT_TIMESTAMP
+                WHERE module_id = ? AND status = 'active'
+                  AND (julianday('now') - julianday(created_at)) > (3.0/24.0)
+                """,
+                (module_id,)
+            )
+
+            # If a session exists for this module and week, reactivate it to continue
+            cursor.execute(
+                """
+                SELECT session_id, status FROM sessions
+                WHERE module_id = ? AND week_number = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (module_id, week_number)
+            )
+            existing = cursor.fetchone()
+            if existing is not None:
+                session_id, status = existing
+                if status != 'active':
+                    cursor.execute(
+                        "UPDATE sessions SET status='active', ended_at=NULL WHERE session_id=?",
+                        (session_id,)
+                    )
+                    conn.commit()
+                return True
+
             # Insert new session (allow multiple per day)
             cursor.execute("""
                 INSERT INTO sessions (module_id, week_number, session_date, status)

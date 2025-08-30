@@ -11,11 +11,51 @@ import sqlite3
 from datetime import datetime
 from config import DB_PATH
 from config import SECRET_KEY, PORT
+from db import get_db, close_db
+from werkzeug.utils import secure_filename
+from flask_wtf.csrf import CSRFProtect, CSRFError
+from collections import defaultdict, deque
+import time
 from functools import wraps
 import os
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY   # Needed for session
+csrf = CSRFProtect(app)
+
+# Ensure DB connection closes after each request
+@app.teardown_appcontext
+def _teardown_db(exception):
+	close_db(exception)
+
+# Ensure critical indexes exist at startup (idempotent)
+with app.app_context():
+	conn = get_db()
+	try:
+		# Ensure session_audit table exists (for existing databases)
+		conn.execute(
+			"""
+			CREATE TABLE IF NOT EXISTS session_audit (
+			    audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+			    session_id INTEGER NOT NULL,
+			    actor_user_id INTEGER NOT NULL,
+			    action TEXT NOT NULL,
+			    note TEXT,
+			    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE ON UPDATE CASCADE,
+			    FOREIGN KEY (actor_user_id) REFERENCES users(user_id) ON DELETE SET NULL ON UPDATE CASCADE
+			);
+			"""
+		)
+		conn.execute(
+			"""
+			CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_session_student
+			ON attendance (session_id, student_id);
+			"""
+		)
+		conn.commit()
+	except Exception:
+		pass
 
 # Login required decorator
 def login_required(f):
@@ -72,6 +112,8 @@ def login():
             return redirect(url_for("admin_dashboard"))
         elif AuthService.is_lecturer(user):
             return redirect(url_for("lecturer_dashboard"))
+        elif user.get("role") == "student":
+            return redirect(url_for("student_portal"))
         else:
             flash("Unknown role. Contact admin.")
             return redirect(url_for("login"))
@@ -162,8 +204,18 @@ def admin_restore_db():
     if not file:
         flash("No file uploaded")
         return redirect(url_for('admin_dashboard'))
+    # Validate filename and extension
+    filename = secure_filename(file.filename)
+    if not filename:
+        flash("Invalid file name")
+        return redirect(url_for('admin_dashboard'))
+    allowed_exts = {'.sqlite', '.sqlite3', '.db'}
+    _, ext = os.path.splitext(filename)
+    if ext.lower() not in allowed_exts:
+        flash("Invalid file type. Please upload a .db/.sqlite file")
+        return redirect(url_for('admin_dashboard'))
     # Save uploaded file to a temp path
-    temp_path = os.path.join("db", "uploads", file.filename)
+    temp_path = os.path.join("db", "uploads", filename)
     os.makedirs(os.path.dirname(temp_path), exist_ok=True)
     file.save(temp_path)
     ok, err = AdminService.restore_database(temp_path)
@@ -183,8 +235,49 @@ def lecturer_dashboard():
     
     return render_template("dashboard.html", user=user, modules=modules)
 
+# --- Student portal ---
+@app.route("/student/attendance")
+@login_required
+def student_portal():
+    user = session['user']
+    if user.get('role') != 'student':
+        flash('Only students can view this page.')
+        return redirect(url_for('login'))
+
+    session_id = request.args.get("session_id", type=int)
+    history = AttendanceService.get_student_attendance_history(user['user_id'], limit=50, session_id=session_id)
+    return render_template("student_portal.html", user=user, history=history, current_session_id=session_id)
+
+# Student: Change password
+@app.route("/student/password", methods=["GET", "POST"])
+@login_required
+def student_change_password():
+    user = session['user']
+    if user.get('role') != 'student':
+        flash('Only students can access this page.')
+        return redirect(url_for('login'))
+    if request.method == 'GET':
+        return render_template("student_change_password.html", user=user)
+    # POST
+    current_password = (request.form.get('current_password') or '').strip()
+    new_password = (request.form.get('new_password') or '').strip()
+    confirm_password = (request.form.get('confirm_password') or '').strip()
+    if not current_password or not new_password or not confirm_password:
+        flash('All fields are required.')
+        return redirect(url_for('student_change_password'))
+    if new_password != confirm_password:
+        flash('New passwords do not match.')
+        return redirect(url_for('student_change_password'))
+    ok = AuthService.change_password(user['user_id'], current_password, new_password)
+    if not ok:
+        flash('Current password is incorrect.')
+        return redirect(url_for('student_change_password'))
+    flash('Password updated successfully.')
+    return redirect(url_for('student_portal'))
+
 @app.route("/session/start/<int:module_id>", methods=["POST"])
 @lecturer_required
+@csrf.exempt
 def start_session(module_id):
     """Start a new session for a module"""
     try:
@@ -198,7 +291,7 @@ def start_session(module_id):
         if success:
             flash(f'Session started successfully for week {week_number}')
         else:
-            flash('Session already exists for today or failed to start')
+            flash('Failed to start session')
             
     except Exception as e:
         flash(f'Error starting session: {str(e)}')
@@ -207,6 +300,7 @@ def start_session(module_id):
 
 @app.route("/session/close/<int:module_id>", methods=["POST"])
 @lecturer_required
+@csrf.exempt
 def close_session(module_id):
     """Close the active session for a module"""
     try:
@@ -237,9 +331,23 @@ def start_session_qr(module_id):
 # JSON route to start session and return QR for floating modal
 @app.route("/api/session/qr/start/<int:module_id>", methods=["POST"])
 @lecturer_required
+@csrf.exempt
 def api_start_session_qr(module_id: int):
     user = session["user"]
-    result, error = SessionController.start_session(module_id, user["user_id"])
+    # Accept optional JSON body with week_number
+    req_json = None
+    try:
+        req_json = request.get_json(silent=True) or {}
+    except Exception:
+        req_json = {}
+    selected_week = None
+    try:
+        if req_json and "week_number" in req_json:
+            selected_week = int(req_json.get("week_number"))
+    except Exception:
+        selected_week = None
+
+    result, error = SessionController.start_session(module_id, user["user_id"], week_number=selected_week)
     if error:
         return jsonify({"ok": False, "error": error}), 400
     return jsonify({
@@ -252,6 +360,9 @@ def api_start_session_qr(module_id: int):
 def close_session_qr(session_id):
     SessionController.close_session(session_id)
     return redirect(url_for("lecturer_dashboard"))
+ 
+
+ 
 
 @app.route("/lecturer/sessions/<int:session_id>/attendance", methods=["GET"])
 @lecturer_required
@@ -444,9 +555,11 @@ def api_list_attendance_for_session(session_id: int):
         return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/api/attendance/submit", methods=["POST"])
+@csrf.exempt
 def api_submit_attendance():
     """API endpoint for submitting attendance records"""
     try:
+        _rate_limit(window_seconds=30, max_requests=10)
         data = request.get_json()
         if not data:
             return jsonify({"success": False, "error": "No data provided"}), 400
@@ -494,6 +607,27 @@ def api_submit_attendance():
             "success": False,
             "error": f"Internal server error: {str(e)}"
         }), 500
+
+# Simple in-memory rate limiter per client IP
+_REQUEST_LOG = defaultdict(lambda: deque(maxlen=100))
+def _rate_limit(window_seconds: int, max_requests: int) -> None:
+    now = time.time()
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr) or 'unknown'
+    dq = _REQUEST_LOG[ip]
+    # Remove timestamps outside window
+    while dq and now - dq[0] > window_seconds:
+        dq.popleft()
+    if len(dq) >= max_requests:
+        raise Exception("Rate limit exceeded. Please slow down.")
+    dq.append(now)
+
+# Error handler for CSRF failures (HTML forms)
+@app.errorhandler(CSRFError)
+def handle_csrf_error(e):
+	if request.path.startswith("/api/"):
+		return jsonify({"ok": False, "error": "CSRF token missing or invalid"}), 400
+	flash("Security check failed. Please try again.")
+	return redirect(url_for('login'))
 
 
 # Day 11: Attendance calculation APIs

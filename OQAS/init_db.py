@@ -69,12 +69,32 @@ def create_tables(cursor: sqlite3.Cursor) -> None:
         );
     """)
 
+    # Ensure supporting unique index exists (for older DBs)
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_session_student
+        ON attendance (session_id, student_id);
+    """)
+
     # App runs table to store per-run session_seed
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS app_runs (
             run_id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_seed TEXT NOT NULL,
             started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+
+    # Session audit trail (reopen/close actions, notes)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS session_audit (
+            audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            actor_user_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            note TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE ON UPDATE CASCADE,
+            FOREIGN KEY (actor_user_id) REFERENCES users(user_id) ON DELETE SET NULL ON UPDATE CASCADE
         );
     """)
 
